@@ -17,13 +17,15 @@ from email.mime.text import MIMEText
 from currency_converter import CurrencyConverter
 from itertools import chain
 import csv
+from datetime import datetime as dt, timezone
+
 
 def main():
-    old_emails = manage_saved_data("r")
-    emails = get_new_emails("Aukcje", old_emails)
+    global NOW
+    NOW = dt.now()
+    # old_emails = manage_saved_data("r")
+    emails = get_new_emails("Aukcje")
     print(f"Got {len(emails)} emails.")
-
-    
 
     translated_emails = parse_emails(emails)
     # print(translated_emails)
@@ -32,18 +34,18 @@ def main():
     send_email(translated_emails)
     # send_email(emails)
 
-def get_new_emails(label: str, old_emails) -> list:
+
+def get_new_emails(label: str) -> list:
     emails = []
-    
+
     try:
         mail = imaplib.IMAP4_SSL(SMTP_SERVER)
         mail.login(EMAIL, PASSWORD)
         mail.select(label)
         mail._mode_utf8()
 
-        data = mail.search(None, 'ALL')
-        mail_ids = data[1]
-        id_list = mail_ids[0].split()
+        inbox_mails = mail.search(None, 'ALL')
+        id_list = inbox_mails[1][0].split()
         # first_email_id = int(id_list[0])
         # latest_email_id = int(id_list[-1])
 
@@ -51,29 +53,32 @@ def get_new_emails(label: str, old_emails) -> list:
         # decoded_keys = ['Date']
 
         # for i in range(latest_email_id, first_email_id, -1):
-        for _id in id_list:
-            data = mail.fetch(str(i), '(RFC822)')
-            for response_part in data:
-                arr = response_part[0]
-                if isinstance(arr, tuple):
-                    msg = email.message_from_string(str(arr[1], 'utf-8'))
+        for _id in reversed(id_list):
+            data = mail.fetch(str(int(_id)), '(RFC822)')
+            if data[0] == 'OK':
+                # msg = email.message_from_string("".join([str(x, 'utf-8') for x in data[1][0]]))
+                msg = email.message_from_string(str(data[1][0][1], 'utf-8'))
+                email_date = msg['date']
+                if not check_date(email_date):
+                    break
 
-                    msg_dict = {
-                        "id": i,
-                        "subject": str(make_header(decode_header(msg['subject']))),
-                        "body": msg.get_payload(decode=True).decode("utf-8", "replace"),
-                        "date": msg['date']
-                    }
-                    emails.append(msg_dict)
-                    # email_subject = msg['subject']
-                    # email_from = msg['from']
-                    # print(str(make_header(decode_header('From : ' + email_from + '\n'))))
-                    # print(str(make_header(decode_header('Subject : ' + email_subject + '\n'))))
+                msg_dict = {
+                    "id": _id,
+                    "subject": str(make_header(decode_header(msg['subject']))),
+                    "body": msg.get_payload(decode=True).decode("utf-8", "replace"),
+                    "date": msg['date']
+                }
+                emails.append(msg_dict)
+                # email_subject = msg['subject']
+                # email_from = msg['from']
+                # print(str(make_header(decode_header('From : ' + email_from + '\n'))))
+                # print(str(make_header(decode_header('Subject : ' + email_subject + '\n'))))
     except Exception as e:
         traceback.print_exc()
         print(str(e))
 
     return emails
+
 
 def manage_saved_data(r_a, rows=[]):
     with open("received.csv", r_a, newline='', encoding="UTF-8") as file:
@@ -86,7 +91,12 @@ def manage_saved_data(r_a, rows=[]):
                 writer.writerow(row)
 
 
-
+def check_date(email_date):
+    # change date format
+    new_dt = dt.strptime(email_date[:-6], "%a, %d %b %Y %H:%M:%S %z")
+    if (NOW - new_dt).total_seconds() / 3600 < 24:
+        return True
+    return False
 
 def parse_emails(_emails):
     translator = Translator()
