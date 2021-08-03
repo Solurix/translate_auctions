@@ -16,25 +16,42 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from currency_converter import CurrencyConverter
 from itertools import chain
+import csv
 
+def main():
+    old_emails = manage_saved_data("r")
+    emails = get_new_emails("Aukcje", old_emails)
+    print(f"Got {len(emails)} emails.")
 
-def get_emails(label: str) -> list:
+    
+
+    translated_emails = parse_emails(emails)
+    # print(translated_emails)
+
+    # emails = [{"subject": "test_subject", "body": "test_body"}]
+    send_email(translated_emails)
+    # send_email(emails)
+
+def get_new_emails(label: str, old_emails) -> list:
     emails = []
+    
     try:
         mail = imaplib.IMAP4_SSL(SMTP_SERVER)
         mail.login(EMAIL, PASSWORD)
         mail.select(label)
+        mail._mode_utf8()
 
         data = mail.search(None, 'ALL')
         mail_ids = data[1]
         id_list = mail_ids[0].split()
-        first_email_id = int(id_list[0])
-        latest_email_id = int(id_list[-1])
+        # first_email_id = int(id_list[0])
+        # latest_email_id = int(id_list[-1])
 
         # keys_to_decode = ['Subject', 'From']
         # decoded_keys = ['Date']
 
-        for i in range(latest_email_id, first_email_id, -1):
+        # for i in range(latest_email_id, first_email_id, -1):
+        for _id in id_list:
             data = mail.fetch(str(i), '(RFC822)')
             for response_part in data:
                 arr = response_part[0]
@@ -44,7 +61,8 @@ def get_emails(label: str) -> list:
                     msg_dict = {
                         "id": i,
                         "subject": str(make_header(decode_header(msg['subject']))),
-                        "body": msg.get_payload(decode=True).decode("utf-8", "replace")
+                        "body": msg.get_payload(decode=True).decode("utf-8", "replace"),
+                        "date": msg['date']
                     }
                     emails.append(msg_dict)
                     # email_subject = msg['subject']
@@ -57,9 +75,17 @@ def get_emails(label: str) -> list:
 
     return emails
 
+def manage_saved_data(r_a, rows=[]):
+    with open("received.csv", r_a, newline='', encoding="UTF-8") as file:
+        if r_a == "r":
+            reader = csv.reader(file, delimiter=',')
+            return list(reader)
+        elif r_a == "a":
+            writer = csv.writer(file, delimiter=',')
+            for row in rows:
+                writer.writerow(row)
 
-emails = get_emails("Aukcje")
-print(len(emails))
+
 
 
 def parse_emails(_emails):
@@ -67,18 +93,17 @@ def parse_emails(_emails):
     translated_emails = []
     cc = CurrencyConverter()
     for _email in _emails:
+
         translated_email = {}
         body = _email['body']
-        # body = mailparser.parse_from_string(_email['body'])
         parser = etree.HTMLParser()
         tree = etree.parse(StringIO(_email['body']), parser)
-        # texts = list(filter(None, tree.xpath("//*/text()")))
-        # texts = set(filter(lambda x: x != " ", tree.xpath("//font/text() | //a/text()")))
         def func(x): return len(x.strip()) > 2
+        # Translator has some problems with "@" sign.
+        # To avoid the problem below lines split strings that have it.
         texts = sorted(set([y.strip() for y in (chain.from_iterable([x.split("@") for x in filter(
             func, tree.xpath("//*/text()"))])) if func(y) and '円' not in y]), key=len, reverse=True)
 
-        # texts_2 = tree.xpath("//*")[0].itertext()
         prices = set(filter(lambda x: x.strip(), tree.xpath(
             "//b[contains(text(), '円')]/text()")))
         for price in prices:
@@ -90,8 +115,6 @@ def parse_emails(_emails):
                 print(e)
 
         print(f"Found {len(texts)} texts to translate.")
-        # print(texts)
-        # translations = [translator.translate(text, src='ja', dest='en') for text in texts]
         for text in texts:
             try:
                 translation = translator.translate(
@@ -104,18 +127,7 @@ def parse_emails(_emails):
         translated_email['subject'] = translator.translate(
             _email['subject'], src='ja', dest='en').text
         translated_emails.append(translated_email)
-        # auctions = tree.xpath("//table[@class='mB10']")
-        # print([x.text for x in translations])
-        # for auction in auctions:
-
-        # print(_email['body'])
     return translated_emails
-
-
-translated_emails = parse_emails(emails)
-# print(translated_emails)
-
-emails = [{"subject": "test_subject", "body": "test_body"}]
 
 
 def send_email(emails):
@@ -139,5 +151,5 @@ def send_email(emails):
         print('Mail Sent')
 
 
-send_email(translated_emails)
-# send_email(emails)
+if __name__ == "__main__":
+    main()
