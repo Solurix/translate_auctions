@@ -1,4 +1,5 @@
-from credentials import *
+from os import replace
+from settings import *
 import smtplib
 import time
 import imaplib
@@ -18,21 +19,21 @@ from currency_converter import CurrencyConverter
 from itertools import chain
 import csv
 from datetime import datetime as dt, timezone
-
+import re
 
 def main():
     global NOW
-    NOW = dt.now()
+    NOW = dt.now(timezone.utc)
     # old_emails = manage_saved_data("r")
-    emails = get_new_emails("Aukcje")
-    print(f"Got {len(emails)} emails.")
+
+    # Get emails from your gmail
+    emails = get_new_emails(FETCH_LABEL)
+
+    print(f"Got {len(emails)} email(s).")
 
     translated_emails = parse_emails(emails)
-    # print(translated_emails)
-
-    # emails = [{"subject": "test_subject", "body": "test_body"}]
     send_email(translated_emails)
-    # send_email(emails)
+
 
 
 def get_new_emails(label: str) -> list:
@@ -46,13 +47,7 @@ def get_new_emails(label: str) -> list:
 
         inbox_mails = mail.search(None, 'ALL')
         id_list = inbox_mails[1][0].split()
-        # first_email_id = int(id_list[0])
-        # latest_email_id = int(id_list[-1])
 
-        # keys_to_decode = ['Subject', 'From']
-        # decoded_keys = ['Date']
-
-        # for i in range(latest_email_id, first_email_id, -1):
         for _id in reversed(id_list):
             data = mail.fetch(str(int(_id)), '(RFC822)')
             if data[0] == 'OK':
@@ -63,16 +58,13 @@ def get_new_emails(label: str) -> list:
                     break
 
                 msg_dict = {
-                    "id": _id,
+                    "id": int(_id),
                     "subject": str(make_header(decode_header(msg['subject']))),
                     "body": msg.get_payload(decode=True).decode("utf-8", "replace"),
-                    "date": msg['date']
+                    "date": email_date
                 }
                 emails.append(msg_dict)
-                # email_subject = msg['subject']
-                # email_from = msg['from']
-                # print(str(make_header(decode_header('From : ' + email_from + '\n'))))
-                # print(str(make_header(decode_header('Subject : ' + email_subject + '\n'))))
+
     except Exception as e:
         traceback.print_exc()
         print(str(e))
@@ -80,23 +72,13 @@ def get_new_emails(label: str) -> list:
     return emails
 
 
-def manage_saved_data(r_a, rows=[]):
-    with open("received.csv", r_a, newline='', encoding="UTF-8") as file:
-        if r_a == "r":
-            reader = csv.reader(file, delimiter=',')
-            return list(reader)
-        elif r_a == "a":
-            writer = csv.writer(file, delimiter=',')
-            for row in rows:
-                writer.writerow(row)
-
-
 def check_date(email_date):
     # change date format
     new_dt = dt.strptime(email_date[:-6], "%a, %d %b %Y %H:%M:%S %z")
-    if (NOW - new_dt).total_seconds() / 3600 < 24:
+    if (NOW - new_dt).total_seconds() < FETCH_TIME:
         return True
     return False
+
 
 def parse_emails(_emails):
     translator = Translator()
@@ -106,36 +88,41 @@ def parse_emails(_emails):
 
         translated_email = {}
         body = _email['body']
+        body = re.sub(r"(?<=\d) 日", "日間", body)
         parser = etree.HTMLParser()
-        tree = etree.parse(StringIO(_email['body']), parser)
+        tree = etree.parse(StringIO(body), parser)
         def func(x): return len(x.strip()) > 2
         # Translator has some problems with "@" sign.
         # To avoid the problem below lines split strings that have it.
         texts = sorted(set([y.strip() for y in (chain.from_iterable([x.split("@") for x in filter(
             func, tree.xpath("//*/text()"))])) if func(y) and '円' not in y]), key=len, reverse=True)
 
+        # To help with translations
+        # texts = [re.sub(r"(?<=\d) 日", "日間", text) for text in texts]
+
         prices = set(filter(lambda x: x.strip(), tree.xpath(
             "//b[contains(text(), '円')]/text()")))
+
         for price in prices:
             try:
                 cleaned_price = int(price.replace(",", "").replace("円", ""))
-                price_in_pln = cc.convert(cleaned_price, 'JPY', 'PLN')
-                body = body.replace(price, f" {int(price_in_pln)} PLN")
+                price_in_pln = cc.convert(cleaned_price, 'JPY', DEST_CURRENCY)
+                body = body.replace(price, f" {int(price_in_pln):,} {DEST_CURRENCY}")
             except Exception as e:
                 print(e)
 
-        print(f"Found {len(texts)} texts to translate.")
+        print(f"Found {len(texts)} strings to translate.")
         for text in texts:
             try:
                 translation = translator.translate(
-                    text, src='ja', dest='en').text
+                    text, src='ja', dest=DEST_LANGUAGE).text
                 # print(text, ">", translation)
                 body = body.replace(text, translation)
             except Exception as e:
                 print(e)
         translated_email['body'] = body
         translated_email['subject'] = translator.translate(
-            _email['subject'], src='ja', dest='en').text
+            _email['subject'], src='ja', dest=DEST_LANGUAGE).text
         translated_emails.append(translated_email)
     return translated_emails
 
@@ -154,7 +141,7 @@ def send_email(emails):
 
         session = smtplib.SMTP('smtp.gmail.com', 587)  # use gmail with port
         session.starttls()  # enable security
-        session.login(EMAIL, PASSWORD)  # login with mail_id and password
+        session.login(EMAIL_FROM, PASSWORD_FROM)  # login with mail_id and password
         text = msg.as_string()
         session.sendmail(EMAIL, EMAIL_TO, text)
         session.quit()
@@ -163,3 +150,14 @@ def send_email(emails):
 
 if __name__ == "__main__":
     main()
+
+
+# def manage_saved_data(r_a, rows=[]):
+#     with open("received.csv", r_a, newline='', encoding="UTF-8") as file:
+#         if r_a == "r":
+#             reader = csv.reader(file, delimiter=',')
+#             return list(reader)
+#         elif r_a == "a":
+#             writer = csv.writer(file, delimiter=',')
+#             for row in rows:
+#                 writer.writerow(row)
