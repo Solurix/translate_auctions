@@ -3,7 +3,7 @@ import smtplib
 import time
 import imaplib
 import email
-import traceback 
+import traceback
 import sys
 from email.header import Header
 from email.header import decode_header, make_header
@@ -14,6 +14,8 @@ from email.message import EmailMessage
 # import mailparser
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from currency_converter import CurrencyConverter
+from itertools import chain
 
 
 def get_emails(label: str) -> list:
@@ -25,19 +27,19 @@ def get_emails(label: str) -> list:
 
         data = mail.search(None, 'ALL')
         mail_ids = data[1]
-        id_list = mail_ids[0].split()   
+        id_list = mail_ids[0].split()
         first_email_id = int(id_list[0])
         latest_email_id = int(id_list[-1])
 
         # keys_to_decode = ['Subject', 'From']
         # decoded_keys = ['Date']
 
-        for i in range(latest_email_id,first_email_id, -1):
-            data = mail.fetch(str(i), '(RFC822)' )
+        for i in range(latest_email_id, first_email_id, -1):
+            data = mail.fetch(str(i), '(RFC822)')
             for response_part in data:
                 arr = response_part[0]
                 if isinstance(arr, tuple):
-                    msg = email.message_from_string(str(arr[1],'utf-8'))
+                    msg = email.message_from_string(str(arr[1], 'utf-8'))
 
                     msg_dict = {
                         "id": i,
@@ -50,38 +52,57 @@ def get_emails(label: str) -> list:
                     # print(str(make_header(decode_header('From : ' + email_from + '\n'))))
                     # print(str(make_header(decode_header('Subject : ' + email_subject + '\n'))))
     except Exception as e:
-        traceback.print_exc() 
+        traceback.print_exc()
         print(str(e))
-    
+
     return emails
+
 
 emails = get_emails("Aukcje")
 print(len(emails))
 
+
 def parse_emails(_emails):
     translator = Translator()
     translated_emails = []
+    cc = CurrencyConverter()
     for _email in _emails:
         translated_email = {}
+        body = _email['body']
         # body = mailparser.parse_from_string(_email['body'])
         parser = etree.HTMLParser()
-        tree   = etree.parse(StringIO(_email['body']), parser)
+        tree = etree.parse(StringIO(_email['body']), parser)
         # texts = list(filter(None, tree.xpath("//*/text()")))
         # texts = set(filter(lambda x: x != " ", tree.xpath("//font/text() | //a/text()")))
-        texts = set(filter(lambda x: x.strip(), tree.xpath("//*/text()")))
+        def func(x): return len(x.strip()) > 2
+        texts = sorted(set([y.strip() for y in (chain.from_iterable([x.split("@") for x in filter(
+            func, tree.xpath("//*/text()"))])) if func(y) and '円' not in y]), key=len, reverse=True)
+
+        # texts_2 = tree.xpath("//*")[0].itertext()
+        prices = set(filter(lambda x: x.strip(), tree.xpath(
+            "//b[contains(text(), '円')]/text()")))
+        for price in prices:
+            try:
+                cleaned_price = int(price.replace(",", "").replace("円", ""))
+                price_in_pln = cc.convert(cleaned_price, 'JPY', 'PLN')
+                body = body.replace(price, f" {int(price_in_pln)} PLN")
+            except Exception as e:
+                print(e)
+
         print(f"Found {len(texts)} texts to translate.")
-        body = _email['body']
         # print(texts)
-        translations = [translator.translate(text, src='ja', dest='en') for text in texts]
+        # translations = [translator.translate(text, src='ja', dest='en') for text in texts]
         for text in texts:
             try:
-                translation = translator.translate(text, src='ja', dest='pl').text
+                translation = translator.translate(
+                    text, src='ja', dest='en').text
                 # print(text, ">", translation)
                 body = body.replace(text, translation)
             except Exception as e:
                 print(e)
         translated_email['body'] = body
-        translated_email['subject'] = translator.translate(_email['subject'], src='ja', dest='pl').text
+        translated_email['subject'] = translator.translate(
+            _email['subject'], src='ja', dest='en').text
         translated_emails.append(translated_email)
         # auctions = tree.xpath("//table[@class='mB10']")
         # print([x.text for x in translations])
@@ -89,10 +110,13 @@ def parse_emails(_emails):
 
         # print(_email['body'])
     return translated_emails
+
+
 translated_emails = parse_emails(emails)
 # print(translated_emails)
 
 emails = [{"subject": "test_subject", "body": "test_body"}]
+
 
 def send_email(emails):
     for email in emails:
@@ -106,9 +130,9 @@ def send_email(emails):
         # s.send_message(msg)
         # s.quit()
 
-        session = smtplib.SMTP('smtp.gmail.com', 587) #use gmail with port
-        session.starttls() #enable security
-        session.login(EMAIL, PASSWORD) #login with mail_id and password
+        session = smtplib.SMTP('smtp.gmail.com', 587)  # use gmail with port
+        session.starttls()  # enable security
+        session.login(EMAIL, PASSWORD)  # login with mail_id and password
         text = msg.as_string()
         session.sendmail(EMAIL, EMAIL_TO, text)
         session.quit()
