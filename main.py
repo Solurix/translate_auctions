@@ -41,6 +41,8 @@ def get_new_emails(label: str) -> list:
 
     try:
         mail = imaplib.IMAP4_SSL(SMTP_SERVER)
+        print(EMAIL)
+        print(PASSWORD)
         mail.login(EMAIL, PASSWORD)
         mail.select(label)
         mail._mode_utf8()
