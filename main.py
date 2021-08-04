@@ -40,7 +40,7 @@ def get_new_emails(label: str) -> list:
     emails = []
 
     try:
-        mail = imaplib.IMAP4_SSL(SMTP_SERVER, port=80)
+        mail = imaplib.IMAP4_SSL(SMTP_SERVER)
         mail.login(EMAIL, PASSWORD)
         mail.select(label)
         mail._mode_utf8()
