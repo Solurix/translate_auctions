@@ -26,7 +26,9 @@ from settings import *
 
 
 def main():
-    schedule.every().day.at("05:00").do(scheduled)
+    # schedule.every().day.at("05:00").do(scheduled)
+    schedule.every(10).minutes.do(scheduled)
+
     while True:
         schedule.run_pending()
         time.sleep(1)

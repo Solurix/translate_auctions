@@ -3,7 +3,8 @@ import os
 EMAIL = str(os.getenv("EMAIL"))
 PASSWORD = str(os.getenv("PASSWORD"))
 SMTP_SERVER = str(os.getenv("SMTP_SERVER"))
-EMAIL_TO = str(os.getenv("EMAIL_TO"))
+# EMAIL_TO = str(os.getenv("EMAIL_TO"))
+EMAIL_TO = EMAIL
 EMAIL_FROM = EMAIL
 PASSWORD_FROM = PASSWORD
 FETCH_TIME = 24 * 3600 # fetch mails that are no older than this value (seconds)
