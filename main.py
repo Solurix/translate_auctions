@@ -28,7 +28,7 @@ from settings import *
 def main():
     print("App started")
     # schedule.every().day.at("05:00").do(scheduled)
-    schedule.every(1).minutes.do(scheduled)
+    schedule.every(60).minutes.do(scheduled)
 
     while True:
         schedule.run_pending()
