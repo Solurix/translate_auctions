@@ -1,27 +1,37 @@
-from os import replace
-from settings import *
-import smtplib
-import time
-import imaplib
+# import csv
 import email
+import imaplib
+import re
+import smtplib
+# import sys
+import time
 import traceback
-import sys
-from email.header import Header
-from email.header import decode_header, make_header
-from lxml import etree
-from io import StringIO
-from googletrans import Translator
+from datetime import datetime as dt
+from datetime import timezone
+from email.header import Header, decode_header, make_header
 from email.message import EmailMessage
 # import mailparser
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from currency_converter import CurrencyConverter
+from io import StringIO
 from itertools import chain
-import csv
-from datetime import datetime as dt, timezone
-import re
+# from os import replace
+
+import schedule
+from currency_converter import CurrencyConverter
+from googletrans import Translator
+from lxml import etree
+
+from settings import *
+
 
 def main():
+    schedule.every().day.at("05:00").do(scheduled)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+def scheduled():
     global NOW
     NOW = dt.now(timezone.utc)
     # old_emails = manage_saved_data("r")
@@ -41,8 +51,8 @@ def get_new_emails(label: str) -> list:
 
     try:
         mail = imaplib.IMAP4_SSL(SMTP_SERVER)
-        print(EMAIL)
-        print(PASSWORD)
+        # print(EMAIL)
+        # print(PASSWORD)
         mail.login(EMAIL, PASSWORD)
         mail.select(label)
         mail._mode_utf8()
